@@ -2,17 +2,12 @@ const rp = require('request-promise');
 const cheerio = require('cheerio');
 const assert = require('assert');
 const fs = require('fs');
+const config = require('./config.js');
 
-const urlHost = 'http://profi.ru/';
-const urlPath = 'services/repetitor/'; //главный адрес, по которому собираем дочерние ссылки
-const file = './report.txt'; // файл отчета
-const linkSelector = 'div.catalog__link a'; //селектор, по которому собираем адреса тестируемых страниц
-                                            //document.querySelectorAll('div.catalog__link a') так можно выполнить заранее
-                                            //в браузере, чтобы понять, че будем цеплять
 let testUrls = [];
 
 const options = {
-    uri: urlHost + urlPath,
+    uri: config.urlHost + config.urlPath,
     transform: function (body) {
         return cheerio.load(body);
     }
@@ -21,8 +16,8 @@ const options = {
 const getUrls = async function() {
   try {
     let $ = await rp(options);
-    await $(linkSelector).map(function(i, el) {
-      let testUrl = urlHost + $(this).attr('href');
+    await $(config.linkSelector).map(function(i, el) {
+      let testUrl = config.urlHost + $(this).attr('href');
       testUrls == '' ? testUrls = [testUrl] : testUrls.push(testUrl);
     });
     return testUrls;
@@ -34,21 +29,27 @@ const getUrls = async function() {
 const getStatusCode = async function(url) {
   try {
     let response = await rp({ uri: url, resolveWithFullResponse: true });
-    let statusCode = response.statusCode;
-    return statusCode;
-  } catch(err) {
-    throw new Error('Не удалось получить ответ на запрос по урлу ' + url);
+    return response.statusCode;
+  } catch(e) {
+    return null;
   }
 }
 
-async function main() {
-  fs.writeFileSync(file, '');
-  let urls = await getUrls();
+const main = async function() {
+  fs.writeFileSync(config.fileName, '');
+  if(config.urlHost && config.urlPath)
+    var urls = await getUrls();
+  else
+    throw new Error('Не указаны хост и путь в конфиге');
   for (let url of urls) {
     let code = await getStatusCode(url);
     console.log(`${url} - ${code}`);
-    if (code != 100) {
-      fs.appendFile(file, `Не получили 200 статус на ${url}, получили код - ${code}\n`, 'utf-8', (err) => {
+    if (code && code != 200) {
+      fs.appendFile(config.fileName, `Не получили 200 статус на ${url}, получили код - ${code}\n`, 'utf-8', (err) => {
+        if (err) throw err;
+      });
+    } else if (code == null){
+      fs.appendFile(config.fileName, `На ${url} не смогли получить статус страницы\n`, 'utf-8', (err) => {
         if (err) throw err;
       });
     }
@@ -57,3 +58,8 @@ async function main() {
 };
 
 main();
+
+process.once('unhandledRejection', async error => {
+  console.error(error);
+  process.exit(-1);
+});
