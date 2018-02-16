@@ -3,26 +3,41 @@ const cheerio = require('cheerio');
 const assert = require('assert');
 const fs = require('fs');
 const config = require('./config.js');
+const URL = require('url').URL;
 
 let testUrls = [];
+const urlHost = new URL(config.url).origin;
 
 const options = {
-    uri: config.urlHost + config.urlPath,
+    uri: config.url,
     transform: function (body) {
         return cheerio.load(body);
     }
 };
 
-const getUrls = async function() {
+const getBody = async function() {
   try {
     let $ = await rp(options);
+    return $;
+  } catch(err) {
+    throw new Error('Не удалось получить тело страницы по урлу ' + options.uri);
+  }
+}
+
+const getUrls = async function($) {
+  try {
     await $(config.linkSelector).map(function(i, el) {
-      let testUrl = config.urlHost + $(this).attr('href');
-      testUrls == '' ? testUrls = [testUrl] : testUrls.push(testUrl);
+      let path = $(this).attr('href');
+      if(path) {
+        let testUrl = urlHost + path;
+        testUrls == '' ? testUrls = [testUrl] : testUrls.push(testUrl);
+      } else {
+        throw new Error('0');
+      }
     });
     return testUrls;
   } catch(err) {
-    throw new Error('Не удалось получить тело страницы по урлу ' + options.uri);
+    throw new Error('Некорректный селектор до гиперссылки, нет аттрибута href по селектору ' + config.linkSelector);
   }
 }
 
@@ -37,10 +52,12 @@ const getStatusCode = async function(url) {
 
 const main = async function() {
   fs.writeFileSync(config.fileName, '');
-  if(config.urlHost && config.urlPath)
-    var urls = await getUrls();
+  if(config.url && config.linkSelector) {
+    var cheerio = await getBody();
+    var urls = await getUrls(cheerio);
+  }
   else
-    throw new Error('Не указаны хост и путь в конфиге');
+    throw new Error('Не указан адрес/селектор в конфиге');
   for (let url of urls) {
     let code = await getStatusCode(url);
     console.log(`${url} - ${code}`);
